@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distribuidora de Bebidas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --surface-color: #161b22;
+            --primary-color: #00e676; /* Neon Green / Freshness */
+            --text-color: #c9d1d9;
+            --text-title: #ffffff;
+            --border-color: #30363d;
+            --error-color: #ff5252;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-color); color: var(--text-color); }
+        h1, h2, h3 { font-family: 'Outfit', sans-serif; color: var(--text-title); }
+
+        /* Navbar */
+        nav { display: flex; justify-content: space-between; padding: 20px 50px; background-color: var(--surface-color); border-bottom: 1px solid var(--border-color); }
+        nav h1 { font-size: 1.5rem; color: var(--primary-color); }
+        nav .links button { background: transparent; border: none; color: var(--text-title); font-size: 1rem; cursor: pointer; margin-left: 20px; font-weight: 500; font-family: 'Inter'; }
+        nav .links button:hover { color: var(--primary-color); }
+
+        /* Landing Page Hero */
+        .hero { 
+            height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+            background: linear-gradient(rgba(13,17,23,0.7), rgba(13,17,23,0.9)), url('https://images.unsplash.com/photo-1556855845-a7576856230f?auto=format&fit=crop&q=80') center/cover;
+        }
+        .hero h1 { font-size: 4rem; margin-bottom: 20px; text-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .hero p { font-size: 1.2rem; max-width: 600px; margin-bottom: 30px; }
+        .hero .btn { background-color: var(--primary-color); color: #000; padding: 15px 30px; border-radius: 8px; font-weight: bold; font-size: 1.1rem; border: none; cursor: pointer; transition: transform 0.2s; }
+        .hero .btn:hover { transform: scale(1.05); }
+
+        /* Dashboard */
+        .dashboard { padding: 50px; display: none; }
+        .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        
+        table { width: 100%; border-collapse: collapse; background-color: var(--surface-color); border-radius: 8px; overflow: hidden; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background-color: rgba(255,255,255,0.05); font-weight: 600; }
+        tr:hover { background-color: rgba(255,255,255,0.02); }
+        
+        .badge { background: rgba(0, 230, 118, 0.1); color: var(--primary-color); padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; }
+        .btn-sell { background-color: transparent; border: 1px solid var(--primary-color); color: var(--primary-color); padding: 8px 15px; border-radius: 5px; cursor: pointer; transition: all 0.2s; }
+        .btn-sell:hover { background-color: var(--primary-color); color: #000; }
+        .input-qty { width: 60px; padding: 7px; border-radius: 5px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); margin-right: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <!-- Navegación -->
+    <nav>
+        <h1>Distribuidora Central</h1>
+        <div class="links">
+            <button onclick="showPage('landing')">Inicio</button>
+            <button onclick="showPage('dashboard')">Consola de Inventario</button>
+        </div>
+    </nav>
+
+    <!-- Página de Inicio (Landing) -->
+    <div id="landing" class="hero">
+        <h1>Refresca tu negocio, <br><span style="color: var(--primary-color)">al mejor precio</span></h1>
+        <p>Distribuidora mayorista y minorista. Sucursales en Cerro Navia y Pudahuel Sur. Conectando nuestro inventario directo con tus necesidades.</p>
+        <button class="btn" onclick="showPage('dashboard')">Ingresar al Sistema de Stock</button>
+    </div>
+
+    <!-- Consola de Inventario -->
+    <div id="dashboard" class="dashboard">
+        <div class="dashboard-header">
+            <h2>Inventario en Tiempo Real</h2>
+            <button class="btn" style="background:var(--primary-color); color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer;" onclick="cargarProductos()">Actualizar Datos</button>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>ID / SKU</th>
+                    <th>Producto</th>
+                    <th>Tipo</th>
+                    <th>Ubicación</th>
+                    <th>Precio</th>
+                    <th>Stock Actual</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-productos">
+                <!-- Se llena con JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Navegación Básica
+        function showPage(pageId) {
+            document.getElementById('landing').style.display = pageId === 'landing' ? 'flex' : 'none';
+            document.getElementById('dashboard').style.display = pageId === 'dashboard' ? 'block' : 'none';
+            if(pageId === 'dashboard') cargarProductos();
+        }
+
+        // Obtener productos desde Flask
+        async function cargarProductos() {
+            try {
+                const res = await fetch('/api/productos');
+                const productos = await res.json();
+                
+                const tbody = document.getElementById('tabla-productos');
+                tbody.innerHTML = '';
+                
+                productos.forEach(p => {
+                    const stockColor = p.stock < 50 ? 'var(--error-color)' : '#fff';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="color: #8b949e">${p.id} | ${p.sku}</td>
+                        <td style="font-weight: 500">${p.nombre}</td>
+                        <td><span class="badge">${p.tipo_venta}</span></td>
+                        <td>Pasillo ${p.pasillo} - Pos ${p.posicion}</td>
+                        <td>$${p.precio}</td>
+                        <td style="color: ${stockColor}; font-weight: bold">${p.stock}</td>
+                        <td style="display: flex; align-items: center;">
+                            <input type="number" id="qty-${p.id}" class="input-qty" min="1" max="40" value="1" title="Cantidad (Máx 40)">
+                            <button class="btn-sell" onclick="vender(${p.id})">Vender</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error("Error cargando productos", err);
+                alert("No se pudo conectar con el servidor de Python. Asegúrate de estar corriendo app.py");
+            }
+        }
+
+        // Hacer una venta
+        async function vender(id) {
+            const cantidadInput = document.getElementById('qty-' + id);
+            let cantidad = parseInt(cantidadInput.value);
+            
+            if(cantidad < 1 || cantidad > 40) {
+                alert("Por favor ingresa una cantidad entre 1 y 40");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/vender', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id, cantidad: cantidad })
+                });
+                
+                const data = await res.json();
+                if(data.status === 'success') {
+                    // Refrescar tabla si la venta fue exitosa
+                    cargarProductos();
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (err) {
+                console.error("Error en venta", err);
+            }
+        }
+    </script>
+</body>
+</html>
