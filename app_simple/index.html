@@ -75,7 +75,32 @@
     <div id="dashboard" class="dashboard">
         <div class="dashboard-header">
             <h2>Inventario en Tiempo Real</h2>
-            <button class="btn" style="background:var(--primary-color); color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer;" onclick="cargarProductos()">Actualizar Datos</button>
+            <div>
+                <button class="btn" style="background:#fff; color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; margin-right: 10px;" onclick="mostrarFormulario(true)">+ Nuevo Producto</button>
+                <button class="btn" style="background:var(--primary-color); color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer;" onclick="cargarProductos()">Actualizar Datos</button>
+            </div>
+        </div>
+
+        <!-- Formulario Oculto -->
+        <div id="form-nuevo" style="display: none; background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+            <h3 style="margin-bottom: 15px;">Registrar Nuevo Producto en Base de Datos</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                <input type="text" id="fn-nombre" placeholder="Nombre (Ej: Cerveza Heineken)" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+                <select id="fn-tipo" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+                    <option value="Unidad">Unidad</option>
+                    <option value="Pack">Pack</option>
+                    <option value="Caja">Caja</option>
+                    <option value="Jaba">Jaba</option>
+                </select>
+                <input type="number" id="fn-precio" placeholder="Precio (Ej: 2500)" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+                <input type="number" id="fn-stock" placeholder="Stock Inicial" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+                <input type="text" id="fn-pasillo" placeholder="Pasillo (Ej: A)" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+                <input type="number" id="fn-posicion" placeholder="Posición (Ej: 12)" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+            </div>
+            <div style="margin-top: 20px;">
+                <button class="btn" style="background:var(--primary-color); color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer;" onclick="guardarProducto()">Guardar Permanentemente</button>
+                <button class="btn" style="background:transparent; color:#fff; padding:10px 20px; border:1px solid #fff; border-radius:5px; cursor:pointer; margin-left:10px;" onclick="mostrarFormulario(false)">Cancelar</button>
+            </div>
         </div>
         
         <table>
@@ -102,6 +127,10 @@
             document.getElementById('landing').style.display = pageId === 'landing' ? 'flex' : 'none';
             document.getElementById('dashboard').style.display = pageId === 'dashboard' ? 'block' : 'none';
             if(pageId === 'dashboard') cargarProductos();
+        }
+
+        function mostrarFormulario(show) {
+            document.getElementById('form-nuevo').style.display = show ? 'block' : 'none';
         }
 
         // Obtener productos desde Flask
@@ -162,6 +191,46 @@
                 }
             } catch (err) {
                 console.error("Error en venta", err);
+            }
+        }
+
+        // Guardar producto en DB
+        async function guardarProducto() {
+            const data = {
+                nombre: document.getElementById('fn-nombre').value,
+                tipo_venta: document.getElementById('fn-tipo').value,
+                precio: document.getElementById('fn-precio').value,
+                stock: document.getElementById('fn-stock').value,
+                pasillo: document.getElementById('fn-pasillo').value || 'A',
+                posicion: document.getElementById('fn-posicion').value || 1
+            };
+
+            if(!data.nombre || !data.precio || !data.stock) {
+                alert("Por favor completa el nombre, precio y stock.");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/productos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if(result.status === 'success') {
+                    alert("¡Producto guardado permanentemente!");
+                    mostrarFormulario(false);
+                    cargarProductos();
+                    
+                    // Limpiar formulario
+                    document.getElementById('fn-nombre').value = '';
+                    document.getElementById('fn-precio').value = '';
+                    document.getElementById('fn-stock').value = '';
+                    document.getElementById('fn-pasillo').value = '';
+                    document.getElementById('fn-posicion').value = '';
+                }
+            } catch (err) {
+                console.error("Error agregando producto", err);
             }
         }
     </script>
