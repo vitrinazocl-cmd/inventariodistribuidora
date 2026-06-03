@@ -64,6 +64,7 @@
         <div class="links">
             <button onclick="showPage('landing')">Inicio</button>
             <button onclick="showPage('dashboard')">Consola de Inventario</button>
+            <button onclick="showPage('pos')" style="background: var(--primary-color); color: #000; padding: 8px 15px; border-radius: 5px;">Punto de Venta</button>
         </div>
     </nav>
 
@@ -130,12 +131,63 @@
         </table>
     </div>
 
+    <!-- Punto de Venta (Caja) -->
+    <div id="pos" class="dashboard" style="display: none;">
+        <div class="dashboard-header">
+            <h2>Caja Registradora</h2>
+        </div>
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+            <!-- Catálogo y Buscador -->
+            <div style="background: var(--surface-color); padding: 20px; border-radius: 8px; border: 1px solid var(--border-color);">
+                <input type="text" id="pos-search" placeholder="Buscar producto por nombre..." style="width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);" onkeyup="filtrarPOS()">
+                <div style="max-height: 500px; overflow-y: auto;">
+                    <table style="width: 100%;">
+                        <tbody id="pos-productos">
+                            <!-- JS llena el catálogo aquí -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Boleta / Carrito -->
+            <div style="background: var(--surface-color); padding: 20px; border-radius: 8px; border: 1px solid var(--primary-color);">
+                <h3>Detalle de la Compra</h3>
+                <hr style="border-color: var(--border-color); margin: 15px 0;">
+                <div id="pos-carrito" style="min-height: 200px; margin-bottom: 20px; max-height: 350px; overflow-y: auto;">
+                    <p style="color: var(--text-muted); text-align: center; margin-top: 50px;">El carrito está vacío</p>
+                </div>
+                <hr style="border-color: var(--border-color); margin: 15px 0;">
+                
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Subtotal:</span>
+                    <span id="pos-subtotal">$0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; color: #ff5252;">
+                    <span>Dcto (Promo Mayorista):</span>
+                    <span id="pos-descuento">-$0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; color: var(--text-muted);">
+                    <span>IVA (19%):</span>
+                    <span id="pos-iva">$0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 1.4rem; font-weight: bold; color: var(--primary-color);">
+                    <span>Total a Pagar:</span>
+                    <span id="pos-total">$0</span>
+                </div>
+                <button class="btn" style="width: 100%; background: var(--primary-color); color: #000; padding: 15px; border: none; border-radius: 5px; font-weight: bold; font-size: 1.1rem; cursor: pointer;" onclick="confirmarVentaMasiva()">Confirmar Venta e Imprimir</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Navegación Básica
         function showPage(pageId) {
             document.getElementById('landing').style.display = pageId === 'landing' ? 'flex' : 'none';
             document.getElementById('dashboard').style.display = pageId === 'dashboard' ? 'block' : 'none';
+            document.getElementById('pos').style.display = pageId === 'pos' ? 'block' : 'none';
+            
             if(pageId === 'dashboard') cargarProductos();
+            if(pageId === 'pos') cargarPOS();
         }
 
         function mostrarFormulario(show) {
@@ -268,6 +320,166 @@
                 } catch (err) {
                     console.error("Error eliminando", err);
                 }
+            }
+        }
+
+        // ==========================================
+        // LÓGICA DEL PUNTO DE VENTA (POS) Y CARRITO
+        // ==========================================
+        let carrito = [];
+        let inventarioGlobal = [];
+
+        // Carga los productos para mostrarlos en el panel izquierdo de la Caja
+        async function cargarPOS() {
+            try {
+                const res = await fetch('/api/productos');
+                inventarioGlobal = await res.json();
+                renderizarPOS(inventarioGlobal);
+            } catch(e) { console.error("Error cargando inventario POS", e); }
+        }
+
+        function renderizarPOS(lista) {
+            const tbody = document.getElementById('pos-productos');
+            tbody.innerHTML = '';
+            lista.forEach(p => {
+                const tr = document.createElement('tr');
+                const badgePromo = p.en_promocion ? '<span style="color:#ff5252; font-size: 0.7rem; border:1px solid #ff5252; padding:1px 4px; border-radius:3px; margin-left:5px;">🔥 Promo</span>' : '';
+                tr.innerHTML = `
+                    <td style="padding: 12px; border-bottom: 1px solid var(--border-color);">
+                        <div style="font-weight: 500; font-size: 1.1rem; color:#fff;">${p.nombre} ${badgePromo}</div>
+                        <div style="color: var(--text-muted); font-size: 0.9rem;">Precio: $${p.precio} | Stock disponible: ${p.stock}</div>
+                    </td>
+                    <td style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: right;">
+                        <button class="btn" style="background:#fff; color:#000; padding:8px 15px; border:none; border-radius:5px; cursor:pointer;" onclick="agregarAlCarrito(${p.id})">+ Agregar</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filtrarPOS() {
+            const texto = document.getElementById('pos-search').value.toLowerCase();
+            const filtrados = inventarioGlobal.filter(p => p.nombre.toLowerCase().includes(texto));
+            renderizarPOS(filtrados);
+        }
+
+        function agregarAlCarrito(id) {
+            const producto = inventarioGlobal.find(p => p.id === id);
+            if (!producto || producto.stock <= 0) {
+                alert("Este producto se encuentra agotado."); return;
+            }
+            
+            const item = carrito.find(i => i.id === id);
+            if (item) {
+                if (item.cantidad >= producto.stock) {
+                    alert("No puedes vender más unidades de las que hay en el inventario físico."); return;
+                }
+                item.cantidad++;
+            } else {
+                carrito.push({ ...producto, cantidad: 1 });
+            }
+            actualizarBoleta();
+        }
+
+        function modificarCantidadCarrito(id, delta) {
+            const item = carrito.find(i => i.id === id);
+            if (item) {
+                const producto = inventarioGlobal.find(p => p.id === id);
+                if (item.cantidad + delta > producto.stock) {
+                    alert("Inventario insuficiente."); return;
+                }
+                item.cantidad += delta;
+                if(item.cantidad <= 0) {
+                    carrito = carrito.filter(i => i.id !== id);
+                }
+                actualizarBoleta();
+            }
+        }
+
+        function actualizarBoleta() {
+            const divCarrito = document.getElementById('pos-carrito');
+            divCarrito.innerHTML = '';
+            
+            if(carrito.length === 0) {
+                divCarrito.innerHTML = '<p style="color: var(--text-muted); text-align: center; margin-top: 50px;">El carrito está vacío</p>';
+                document.getElementById('pos-subtotal').innerText = "$0";
+                document.getElementById('pos-descuento').innerText = "-$0";
+                document.getElementById('pos-iva').innerText = "$0";
+                document.getElementById('pos-total').innerText = "$0";
+                return;
+            }
+
+            let sumaBruta = 0;
+            let sumaDescuentos = 0;
+
+            carrito.forEach(item => {
+                const totalItem = item.precio * item.cantidad;
+                let descuentoItem = 0;
+                
+                // Regla de Promoción por Mayor
+                if (item.en_promocion && item.cantidad > 10) {
+                    descuentoItem = Math.floor(totalItem * 0.03);
+                }
+                
+                sumaBruta += totalItem;
+                sumaDescuentos += descuentoItem;
+
+                divCarrito.innerHTML += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px;">
+                        <div style="flex: 2;">
+                            <div style="color:#fff;">${item.nombre}</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">$${item.precio} c/u</div>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
+                            <button onclick="modificarCantidadCarrito(${item.id}, -1)" style="background:var(--border-color); color:#fff; border:none; width:25px; height:25px; border-radius:3px; cursor:pointer;">-</button>
+                            <span style="color:#fff; font-weight:bold; min-width:15px; text-align:center;">${item.cantidad}</span>
+                            <button onclick="modificarCantidadCarrito(${item.id}, 1)" style="background:var(--primary-color); color:#000; border:none; width:25px; height:25px; border-radius:3px; cursor:pointer;">+</button>
+                        </div>
+                        <div style="flex: 1; text-align: right; font-weight:bold; color:var(--primary-color);">
+                            $${totalItem - descuentoItem}
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Matemáticas Tributarias (Basado en el sistema chileno donde el precio de venta público ya lleva el IVA incluido)
+            // Por ende, el Subtotal Neto se obtiene "extrayendo" el IVA del Total Final a pagar.
+            const totalPagarBruto = sumaBruta - sumaDescuentos;
+            const subtotalNeto = Math.round(totalPagarBruto / 1.19);
+            const iva = totalPagarBruto - subtotalNeto;
+
+            document.getElementById('pos-subtotal').innerText = "$" + subtotalNeto.toLocaleString('es-CL');
+            document.getElementById('pos-descuento').innerText = "-$" + sumaDescuentos.toLocaleString('es-CL');
+            document.getElementById('pos-iva').innerText = "$" + iva.toLocaleString('es-CL');
+            document.getElementById('pos-total').innerText = "$" + totalPagarBruto.toLocaleString('es-CL');
+        }
+
+        async function confirmarVentaMasiva() {
+            if (carrito.length === 0) {
+                alert("Primero debes añadir productos al carrito para vender.");
+                return;
+            }
+
+            const payload = carrito.map(item => ({ id: item.id, cantidad: item.cantidad }));
+
+            try {
+                const res = await fetch('/api/venta_masiva', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: payload })
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert("¡BIP! Venta confirmada.\\nEl stock de estos productos ha sido reducido de la base de datos central.");
+                    carrito = [];
+                    cargarPOS();
+                    actualizarBoleta();
+                } else {
+                    alert("Error en la venta: " + data.message);
+                }
+            } catch (err) {
+                console.error("Fallo de red en venta masiva", err);
             }
         }
     </script>

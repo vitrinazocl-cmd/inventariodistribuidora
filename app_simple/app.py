@@ -175,6 +175,45 @@ def eliminar_producto(id):
     conn.close()
     return jsonify({"status": "success", "message": "Producto eliminado exitosamente"})
 
+# 6. Venta Masiva (Caja Registradora / POS)
+@app.route('/api/venta_masiva', methods=['POST'])
+def venta_masiva():
+    data = request.json
+    items = data.get('items', [])
+    
+    if not items:
+        return jsonify({"status": "error", "message": "El carrito está vacío"}), 400
+        
+    conn = get_db_connection()
+    
+    try:
+        # Iniciamos el chequeo y descuento del carrito
+        for item in items:
+            idp = item['id']
+            cantidad = item['cantidad']
+            
+            producto = conn.execute('SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
+            
+            if producto is None:
+                raise Exception(f"Producto ID {idp} no encontrado en la base de datos.")
+                
+            if producto['stock'] < cantidad:
+                raise Exception(f"Stock insuficiente para el producto: {producto['nombre']}. Stock actual: {producto['stock']}")
+                
+            nuevo_stock = producto['stock'] - cantidad
+            conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
+            
+        # Si todos los productos tenían stock, guardamos los cambios definitivamente
+        conn.commit()
+    except Exception as e:
+        # Si hubo un error (ej. falta de stock de algún producto), deshacemos todo
+        conn.rollback()
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 400
+        
+    conn.close()
+    return jsonify({"status": "success", "message": "Venta procesada con éxito y stock descontado."})
+
 # ======================
 # MAIN
 # ======================
