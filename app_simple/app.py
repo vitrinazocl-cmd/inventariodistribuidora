@@ -26,7 +26,8 @@ def init_db():
             precio INTEGER,
             stock INTEGER,
             pasillo TEXT,
-            posicion INTEGER
+            posicion INTEGER,
+            en_promocion INTEGER DEFAULT 0
         )
     ''')
     conn.commit()
@@ -67,10 +68,13 @@ def cargar_datos_mock(conn):
         tamano = random.choice(["350cc", "500cc", "1L", "1.5L", "2L", "3L", "750ml"])
         nombre_final = f"{nombre_base} {tamano}"
         
+        # Dejaremos exactamente 20 productos con promoción de ejemplo
+        en_promocion = 1 if i <= 20 else 0
+        
         conn.execute('''
-            INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (generar_sku(i), nombre_final, tipo, precio, random.randint(0, 1000), random.choice(string.ascii_uppercase), random.randint(1, 100)))
+            INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion, en_promocion)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (generar_sku(i), nombre_final, tipo, precio, random.randint(0, 1000), random.choice(string.ascii_uppercase), random.randint(1, 100), en_promocion))
     conn.commit()
 
 # ======================
@@ -110,11 +114,24 @@ def vender():
         return jsonify({"status": "error", "message": "Producto no encontrado"}), 404
         
     if producto['stock'] >= cantidad:
+        total = producto['precio'] * cantidad
+        descuento = 0
+        
+        # Calcular descuento del 3% si tiene promo y son más de 10 unidades
+        if producto['en_promocion'] == 1 and cantidad > 10:
+            descuento = int(total * 0.03)
+            total -= descuento
+            
         nuevo_stock = producto['stock'] - cantidad
         conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "message": "Venta exitosa", "stock_actual": nuevo_stock})
+        
+        mensaje = f"Venta exitosa. Total a cobrar: ${total}"
+        if descuento > 0:
+            mensaje += f" (Incluye un descuento del 3%: ahorró ${descuento})"
+            
+        return jsonify({"status": "success", "message": mensaje, "stock_actual": nuevo_stock})
     else:
         conn.close()
         return jsonify({"status": "error", "message": "Stock insuficiente"}), 400
@@ -127,8 +144,8 @@ def agregar_producto():
     
     conn = get_db_connection()
     conn.execute('''
-        INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion, en_promocion)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         sku, 
         data.get('nombre'), 
@@ -136,7 +153,8 @@ def agregar_producto():
         int(data.get('precio', 0)), 
         int(data.get('stock', 0)), 
         data.get('pasillo', 'A'), 
-        int(data.get('posicion', 1))
+        int(data.get('posicion', 1)),
+        int(data.get('en_promocion', 0))
     ))
     conn.commit()
     conn.close()

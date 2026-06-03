@@ -100,6 +100,11 @@
                 <input type="number" id="fn-stock" placeholder="Stock Inicial" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
                 <input type="text" id="fn-pasillo" placeholder="Pasillo (Ej: A)" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
                 <input type="number" id="fn-posicion" placeholder="Posición (Ej: 12)" style="padding: 10px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+                
+                <div style="grid-column: span 1; display: flex; align-items: center; gap: 10px; padding: 10px;">
+                    <input type="checkbox" id="fn-promo" style="width: 20px; height: 20px; accent-color: #ff5252;">
+                    <label for="fn-promo" style="color: #ff5252; font-weight: bold;">🔥 Activar Promo Mayorista</label>
+                </div>
             </div>
             <div style="margin-top: 20px;">
                 <button class="btn" style="background:var(--primary-color); color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer;" onclick="guardarProducto()">Guardar Permanentemente</button>
@@ -148,10 +153,12 @@
                 
                 productos.forEach(p => {
                     const stockColor = p.stock < 50 ? 'var(--error-color)' : '#fff';
+                    const promoBadge = p.en_promocion ? '<span style="background:#ff5252; color:#fff; font-size: 0.7rem; padding:2px 6px; border-radius:10px; margin-left:8px; font-weight:bold;">🔥 PROMO -3%</span>' : '';
+                    
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td style="color: #8b949e">${p.id} | ${p.sku}</td>
-                        <td style="font-weight: 500">${p.nombre}</td>
+                        <td style="font-weight: 500">${p.nombre} ${promoBadge}</td>
                         <td><span class="badge">${p.tipo_venta}</span></td>
                         <td>Pasillo ${p.pasillo} - Pos ${p.posicion}</td>
                         <td>$${p.precio}</td>
@@ -190,6 +197,7 @@
                 if(data.status === 'success') {
                     // Refrescar tabla si la venta fue exitosa
                     cargarProductos();
+                    alert(data.message); // Mostrar el mensaje con el total a cobrar y descuento
                 } else {
                     alert("Error: " + data.message);
                 }
@@ -206,7 +214,8 @@
                 precio: document.getElementById('fn-precio').value,
                 stock: document.getElementById('fn-stock').value,
                 pasillo: document.getElementById('fn-pasillo').value || 'A',
-                posicion: document.getElementById('fn-posicion').value || 1
+                posicion: document.getElementById('fn-posicion').value || 1,
+                en_promocion: document.getElementById('fn-promo').checked ? 1 : 0
             };
 
             if(!data.nombre || !data.precio || !data.stock) {
@@ -232,6 +241,7 @@
                     document.getElementById('fn-stock').value = '';
                     document.getElementById('fn-pasillo').value = '';
                     document.getElementById('fn-posicion').value = '';
+                    document.getElementById('fn-promo').checked = false;
                 }
             } catch (err) {
                 console.error("Error agregando producto", err);
