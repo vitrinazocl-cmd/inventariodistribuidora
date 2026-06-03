@@ -107,11 +107,27 @@ def home():
 def logo():
     return send_file('imagen1.jpeg')
 
-# 2. Obtener productos de la Base de Datos
+# ======================
+# API ENDPOINTS
+# ======================
+
+# 1. Obtener todos los productos
 @app.route('/api/productos', methods=['GET'])
 def get_productos():
     conn = get_db_connection()
-    productos = conn.execute('SELECT * FROM productos ORDER BY id DESC').fetchall()
+    
+    # Asegurar que existan los productos base para la jaba mixta
+    necesarios = ["Coca-Cola 1.25L", "Fanta 1.25L", "Sprite 1.25L"]
+    for nombre in necesarios:
+        existe = conn.execute('SELECT 1 FROM productos WHERE nombre = ?', (nombre,)).fetchone()
+        if not existe:
+            conn.execute('''
+                INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion, en_promocion)
+                VALUES (?, ?, 'Unidad', 1200, 500, 'A', 1, 0)
+            ''', (f"BEB-125-{random.randint(10,99)}", nombre))
+            conn.commit()
+            
+    productos = conn.execute('SELECT * FROM productos').fetchall()
     conn.close()
     return jsonify([dict(ix) for ix in productos])
 
@@ -214,34 +230,61 @@ def venta_masiva():
     try:
         # Iniciamos el chequeo y descuento del carrito
         for item in items:
-            idp = item['id']
-            cantidad = item['cantidad']
-            
-            producto = conn.execute('SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
-            
-            if producto is None:
-                raise Exception(f"Producto ID {idp} no encontrado en la base de datos.")
+            if item.get('is_jaba_mixta'):
+                # PROCESAR JABA MIXTA (Combo Dinámico)
+                for sub in item['sub_items']:
+                    idp = sub['id']
+                    sub_qty = sub['qty'] * item['cantidad'] # Si compran 2 jabas, multiplicar
+                    
+                    if sub_qty > 0:
+                        producto = conn.execute('SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
+                        if producto is None:
+                            raise Exception(f"Producto componente de Jaba no encontrado")
+                        if producto['stock'] < sub_qty:
+                            raise Exception(f"Falta stock de {producto['nombre']} para armar la Jaba Mixta")
+                            
+                        nuevo_stock = producto['stock'] - sub_qty
+                        conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
                 
-            if producto['stock'] < cantidad:
-                raise Exception(f"Stock insuficiente para el producto: {producto['nombre']}. Stock actual: {producto['stock']}")
+                # Registrar la jaba como un todo en el historial (No los productos sueltos)
+                total_pagar = item['precio'] * item['cantidad']
+                neto_item = int(total_pagar / 1.19)
+                iva_item = total_pagar - neto_item
+                conn.execute('''
+                    INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
+                    VALUES (datetime('now', 'localtime'), 0, ?, ?, ?, 0, ?, ?)
+                ''', (item['nombre'], item['cantidad'], neto_item, iva_item, total_pagar))
                 
-            nuevo_stock = producto['stock'] - cantidad
-            conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
+            else:
+                # PROCESAR PRODUCTO NORMAL
+                idp = item['id']
+                cantidad = item['cantidad']
+                
+                producto = conn.execute('SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
+                
+                if producto is None:
+                    raise Exception(f"Producto ID {idp} no encontrado en la base de datos.")
+                    
+                if producto['stock'] < cantidad:
+                    raise Exception(f"Stock insuficiente para el producto: {producto['nombre']}. Stock actual: {producto['stock']}")
+                    
+                nuevo_stock = producto['stock'] - cantidad
+                conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
+                
+                # Registrar al historial
+                total_item = producto['precio'] * cantidad
+                descto_item = int(total_item * 0.03) if (producto['en_promocion'] == 1 and cantidad > 10) else 0
+                total_pagar = total_item - descto_item
+                
+                neto_item = int(total_pagar / 1.19)
+                iva_item = total_pagar - neto_item
+                
+                conn.execute('''
+                    INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
+                    VALUES (datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?)
+                ''', (idp, producto['nombre'], cantidad, neto_item, descto_item, iva_item, total_pagar))
             
-            # Registrar al historial
-            total_item = producto['precio'] * cantidad
-            descto_item = int(total_item * 0.03) if (producto['en_promocion'] == 1 and cantidad > 10) else 0
-            total_pagar = total_item - descto_item
-            
-            neto_item = int(total_pagar / 1.19)
-            iva_item = total_pagar - neto_item
-            
-            conn.execute('''
-                INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
-                VALUES (datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?)
-            ''', (idp, producto['nombre'], cantidad, neto_item, descto_item, iva_item, total_pagar))
-            
-        # Si todos los productos tenían stock, guardamos los cambios definitivamente
+        # Si todo está OK, guardamos los cambios definitivamente
         conn.commit()
     except Exception as e:
         # Si hubo un error (ej. falta de stock de algún producto), deshacemos todo

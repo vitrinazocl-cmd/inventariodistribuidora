@@ -134,8 +134,9 @@
 
     <!-- Punto de Venta (Caja) -->
     <div id="pos" class="dashboard" style="display: none;">
-        <div class="dashboard-header">
+        <div class="dashboard-header" style="display: flex; justify-content: space-between;">
             <h2>Caja Registradora</h2>
+            <button class="btn" style="background: #f39c12; color: #fff; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;" onclick="abrirModalJaba()">📦 Armar Jaba Mixta 1.25L</button>
         </div>
         <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
             <!-- Catálogo y Buscador -->
@@ -226,6 +227,45 @@
                         <!-- Llenado por JS -->
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Armar Jaba Mixta -->
+    <div id="modal-jaba" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: var(--surface-color); padding: 30px; border-radius: 8px; width: 400px; border: 1px solid var(--border-color);">
+            <h2 style="margin-bottom: 20px; color: #f39c12;">📦 Armar Jaba Mixta 1.25L</h2>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">Precio: $10.250 | Debe contener exactamente 10 unidades.</p>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #333;">
+                <strong style="color: #fff;">Coca-Cola 1.25L</strong>
+                <div>
+                    <input type="number" id="qty-coca" value="0" min="0" max="10" style="width: 60px; padding: 5px; background: #000; color: #fff; border: 1px solid var(--border-color); text-align: center;" onchange="validarSumaJaba()">
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #333;">
+                <strong style="color: #fff;">Fanta 1.25L</strong>
+                <div>
+                    <input type="number" id="qty-fanta" value="0" min="0" max="10" style="width: 60px; padding: 5px; background: #000; color: #fff; border: 1px solid var(--border-color); text-align: center;" onchange="validarSumaJaba()">
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #333;">
+                <strong style="color: #fff;">Sprite 1.25L</strong>
+                <div>
+                    <input type="number" id="qty-sprite" value="0" min="0" max="10" style="width: 60px; padding: 5px; background: #000; color: #fff; border: 1px solid var(--border-color); text-align: center;" onchange="validarSumaJaba()">
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+                <span style="color: #fff; font-weight: bold;">Total seleccionadas:</span>
+                <span id="suma-jaba" style="color: var(--error-color); font-weight: bold; font-size: 1.2rem;">0/10</span>
+            </div>
+            
+            <div style="margin-top: 25px; display: flex; gap: 10px;">
+                <button class="btn" style="flex: 1; background: transparent; border: 1px solid var(--border-color); color: #fff; padding: 10px;" onclick="cerrarModalJaba()">Cancelar</button>
+                <button id="btn-add-jaba" class="btn" style="flex: 1; background: var(--primary-color); color: #000; padding: 10px; font-weight: bold; cursor: not-allowed; opacity: 0.5;" onclick="agregarJabaAlCarrito()" disabled>Añadir al Carrito</button>
             </div>
         </div>
     </div>
@@ -513,7 +553,19 @@
                 return;
             }
 
-            const payload = carrito.map(item => ({ id: item.id, cantidad: item.cantidad }));
+            const payload = carrito.map(item => {
+                if(item.is_jaba_mixta) {
+                    return {
+                        id: item.id,
+                        cantidad: item.cantidad,
+                        is_jaba_mixta: true,
+                        precio: item.precio,
+                        nombre: item.nombre,
+                        sub_items: item.sub_items
+                    };
+                }
+                return { id: item.id, cantidad: item.cantidad };
+            });
 
             try {
                 const res = await fetch('/api/venta_masiva', {
@@ -534,6 +586,81 @@
             } catch (err) {
                 console.error("Fallo de red en venta masiva", err);
             }
+        }
+
+        // ==========================================
+        // LÓGICA DE JABA MIXTA DINÁMICA
+        // ==========================================
+        function abrirModalJaba() {
+            document.getElementById('qty-coca').value = 0;
+            document.getElementById('qty-fanta').value = 0;
+            document.getElementById('qty-sprite').value = 0;
+            validarSumaJaba();
+            document.getElementById('modal-jaba').style.display = 'flex';
+        }
+
+        function cerrarModalJaba() {
+            document.getElementById('modal-jaba').style.display = 'none';
+        }
+
+        function validarSumaJaba() {
+            const coca = parseInt(document.getElementById('qty-coca').value) || 0;
+            const fanta = parseInt(document.getElementById('qty-fanta').value) || 0;
+            const sprite = parseInt(document.getElementById('qty-sprite').value) || 0;
+            
+            const suma = coca + fanta + sprite;
+            const indicador = document.getElementById('suma-jaba');
+            const btn = document.getElementById('btn-add-jaba');
+            
+            indicador.innerText = suma + "/10";
+            
+            if (suma === 10) {
+                indicador.style.color = 'var(--primary-color)';
+                btn.style.cursor = 'pointer';
+                btn.style.opacity = '1';
+                btn.disabled = false;
+            } else {
+                indicador.style.color = 'var(--error-color)';
+                btn.style.cursor = 'not-allowed';
+                btn.style.opacity = '0.5';
+                btn.disabled = true;
+            }
+        }
+
+        function agregarJabaAlCarrito() {
+            const coca = parseInt(document.getElementById('qty-coca').value) || 0;
+            const fanta = parseInt(document.getElementById('qty-fanta').value) || 0;
+            const sprite = parseInt(document.getElementById('qty-sprite').value) || 0;
+
+            if (coca + fanta + sprite !== 10) return;
+
+            // Encontrar los IDs reales de los productos para descontarlos en el backend
+            const idCoca = inventarioGlobal.find(p => p.nombre === 'Coca-Cola 1.25L')?.id || 0;
+            const idFanta = inventarioGlobal.find(p => p.nombre === 'Fanta 1.25L')?.id || 0;
+            const idSprite = inventarioGlobal.find(p => p.nombre === 'Sprite 1.25L')?.id || 0;
+
+            if (!idCoca || !idFanta || !idSprite) {
+                alert("Error crítico: No se encontraron los productos base (Coca-Cola, Fanta o Sprite de 1.25L) en la base de datos.");
+                return;
+            }
+
+            const pseudoId = 'jaba_' + Date.now();
+            carrito.push({
+                id: pseudoId,
+                nombre: "Jaba Mixta 1.25L (Surtida)",
+                precio: 10250,
+                cantidad: 1,
+                en_promocion: 0,
+                is_jaba_mixta: true,
+                sub_items: [
+                    { id: idCoca, qty: coca },
+                    { id: idFanta, qty: fanta },
+                    { id: idSprite, qty: sprite }
+                ]
+            });
+
+            cerrarModalJaba();
+            actualizarBoleta();
         }
 
         // ==========================================
