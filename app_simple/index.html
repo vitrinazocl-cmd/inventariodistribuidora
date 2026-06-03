@@ -148,7 +148,7 @@
         <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
             <!-- Catálogo y Buscador -->
             <div style="background: var(--surface-color); padding: 20px; border-radius: 8px; border: 1px solid var(--border-color);">
-                <input type="text" id="pos-search" placeholder="Buscar producto por nombre..." style="width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);" onkeyup="filtrarPOS()">
+                <input type="text" id="pos-search" placeholder="Buscar producto por nombre..." style="width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);" oninput="filtrarPOS()">
                 <div style="max-height: 500px; overflow-y: auto;">
                     <table style="width: 100%;">
                         <tbody id="pos-productos">
@@ -535,9 +535,13 @@
             });
         }
 
+        function normalizarTexto(texto) {
+            return (texto || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/-/g, ' ');
+        }
+
         function filtrarPOS() {
-            const texto = document.getElementById('pos-search').value.toLowerCase();
-            const filtrados = inventarioGlobal.filter(p => p.nombre.toLowerCase().includes(texto));
+            const texto = normalizarTexto(document.getElementById('pos-search').value);
+            const filtrados = inventarioGlobal.filter(p => normalizarTexto(p.nombre).includes(texto));
             renderizarPOS(filtrados);
         }
 
