@@ -67,6 +67,11 @@ def cargar_datos_mock(conn):
 def home():
     return send_file('index.html')
 
+# 1.5. Mostrar el logo
+@app.route('/imagen1.jpeg')
+def logo():
+    return send_file('imagen1.jpeg')
+
 # 2. Obtener productos de la Base de Datos
 @app.route('/api/productos', methods=['GET'])
 def get_productos():
