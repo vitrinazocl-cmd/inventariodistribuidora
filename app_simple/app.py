@@ -142,6 +142,21 @@ def agregar_producto():
     conn.close()
     return jsonify({"status": "success", "message": "Producto agregado exitosamente"}), 201
 
+# 5. Eliminar un Producto
+@app.route('/api/productos/<int:id>', methods=['DELETE'])
+def eliminar_producto(id):
+    conn = get_db_connection()
+    producto = conn.execute('SELECT * FROM productos WHERE id = ?', (id,)).fetchone()
+    
+    if producto is None:
+        conn.close()
+        return jsonify({"status": "error", "message": "Producto no encontrado"}), 404
+        
+    conn.execute('DELETE FROM productos WHERE id = ?', (id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Producto eliminado exitosamente"})
+
 # ======================
 # MAIN
 # ======================

@@ -80,6 +80,7 @@
             <h2>Inventario en Tiempo Real</h2>
             <div>
                 <button class="btn" style="background:#fff; color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; margin-right: 10px;" onclick="mostrarFormulario(true)">+ Nuevo Producto</button>
+                <button class="btn" style="background:var(--error-color); color:#fff; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; margin-right: 10px;" onclick="eliminarProductoPrompt()">- Eliminar Producto</button>
                 <button class="btn" style="background:var(--primary-color); color:#000; padding:10px 20px; border:none; border-radius:5px; cursor:pointer;" onclick="cargarProductos()">Actualizar Datos</button>
             </div>
         </div>
@@ -234,6 +235,29 @@
                 }
             } catch (err) {
                 console.error("Error agregando producto", err);
+            }
+        }
+
+        // Eliminar producto
+        async function eliminarProductoPrompt() {
+            const id = prompt("Ingrese el ID del producto que desea eliminar (El número que aparece antes del SKU en la tabla, ejemplo: 5):");
+            if(!id) return;
+
+            if(confirm(`¿Estás 100% seguro de que deseas eliminar permanentemente el producto con ID ${id} del inventario?`)) {
+                try {
+                    const res = await fetch(`/api/productos/${id}`, {
+                        method: 'DELETE'
+                    });
+                    const result = await res.json();
+                    if(result.status === 'success') {
+                        alert("Producto eliminado de la base de datos.");
+                        cargarProductos();
+                    } else {
+                        alert("Error: " + result.message);
+                    }
+                } catch (err) {
+                    console.error("Error eliminando", err);
+                }
             }
         }
     </script>
