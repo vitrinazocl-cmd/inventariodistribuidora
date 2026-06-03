@@ -62,18 +62,25 @@
             <h1>Distribuidora Eleodoro El Grande</h1>
         </div>
         <div class="links">
-            <button onclick="showPage('landing')">Inicio</button>
+            <button onclick="showPage('landing')">Salir (Cerrar Sesión)</button>
             <button onclick="showPage('dashboard')">Consola de Inventario</button>
             <button onclick="showPage('pos')" style="background: var(--primary-color); color: #000; padding: 8px 15px; border-radius: 5px; margin-right: 15px;">Punto de Venta</button>
-            <button onclick="showPage('reportes')" style="background: transparent; color: #fff; padding: 8px 15px; border: 1px solid #fff; border-radius: 5px;">📊 Reportes de Ventas</button>
+            <button onclick="showPage('reportes')" style="background: transparent; color: #fff; padding: 8px 15px; border: 1px solid #fff; border-radius: 5px; margin-right: 15px;">📊 Reportes de Ventas</button>
+            <button onclick="abrirModalPassword()" style="background: #333; color: #fff; padding: 8px 15px; border: none; border-radius: 5px;">🔒 Clave</button>
         </div>
     </nav>
 
     <!-- Página de Inicio (Landing) -->
     <div id="landing" class="hero">
-        <h1>Refresca tu negocio, <br><span style="color: var(--primary-color)">al mejor precio</span></h1>
-        <p>Distribuidora mayorista y minorista. Sucursales en Cerro Navia y Pudahuel Sur. Conectando nuestro inventario directo con tus necesidades.</p>
-        <button class="btn" onclick="showPage('dashboard')">Ingresar al Sistema de Stock</button>
+        <h1 style="font-size: 3rem; margin-bottom: 20px;">Distribuidora Eleodoro El Grande</h1>
+        <p style="font-size: 1.2rem; color: #a0a0a0; margin-bottom: 40px;">Sistema avanzado de gestión de inventario en tiempo real.</p>
+        
+        <div style="background: var(--surface-color); padding: 30px; border-radius: 8px; border: 1px solid var(--border-color); width: 350px;">
+            <h3 style="margin-bottom: 20px; color: #fff;">Acceso Administrativo</h3>
+            <input type="text" id="login-user" placeholder="Usuario" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+            <input type="password" id="login-pass" placeholder="Contraseña" style="width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);" onkeyup="if(event.key === 'Enter') hacerLogin()">
+            <button class="btn" style="width: 100%; background: var(--primary-color); color: #000; padding: 12px; border: none; border-radius: 5px; font-weight: bold; font-size: 1.1rem; cursor: pointer;" onclick="hacerLogin()">Ingresar al Sistema</button>
+        </div>
     </div>
 
     <!-- Consola de Inventario -->
@@ -270,7 +277,85 @@
         </div>
     </div>
 
+    <!-- Modal Cambio de Contraseña -->
+    <div id="modal-pwd" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: var(--surface-color); padding: 30px; border-radius: 8px; width: 350px; border: 1px solid var(--border-color);">
+            <h3 style="margin-bottom: 20px; color: #fff;">🔒 Cambiar Contraseña</h3>
+            <input type="password" id="pwd-old" placeholder="Contraseña Actual" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+            <input type="password" id="pwd-new" placeholder="Nueva Contraseña" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 5px; background: #000; color: #fff; border: 1px solid var(--border-color);">
+            
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button class="btn" style="flex: 1; background: transparent; border: 1px solid var(--border-color); color: #fff; padding: 10px;" onclick="cerrarModalPassword()">Cancelar</button>
+                <button class="btn" style="flex: 1; background: var(--primary-color); color: #000; padding: 10px; font-weight: bold;" onclick="guardarNuevaPassword()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // Sistema de Login
+        let currentUser = "";
+        
+        async function hacerLogin() {
+            const user = document.getElementById('login-user').value;
+            const pass = document.getElementById('login-pass').value;
+            
+            if(!user || !pass) return;
+            
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user, password: pass })
+                });
+                
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    currentUser = user;
+                    document.getElementById('login-pass').value = '';
+                    showPage('dashboard');
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (err) {
+                console.error("Fallo de red", err);
+            }
+        }
+        
+        function abrirModalPassword() {
+            document.getElementById('pwd-old').value = '';
+            document.getElementById('pwd-new').value = '';
+            document.getElementById('modal-pwd').style.display = 'flex';
+        }
+        
+        function cerrarModalPassword() {
+            document.getElementById('modal-pwd').style.display = 'none';
+        }
+        
+        async function guardarNuevaPassword() {
+            const oldp = document.getElementById('pwd-old').value;
+            const newp = document.getElementById('pwd-new').value;
+            
+            if(!oldp || !newp) return;
+            
+            try {
+                const res = await fetch('/api/cambiar_password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: currentUser, old_password: oldp, new_password: newp })
+                });
+                
+                const data = await res.json();
+                alert(data.message);
+                
+                if (data.status === 'success') {
+                    cerrarModalPassword();
+                }
+            } catch (err) {
+                console.error("Fallo de red", err);
+            }
+        }
+
         // Navegación Básica
         function showPage(pageId) {
             document.getElementById('landing').style.display = pageId === 'landing' ? 'flex' : 'none';

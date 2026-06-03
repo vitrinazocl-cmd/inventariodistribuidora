@@ -80,9 +80,23 @@ def init_db():
             total_final INTEGER
         )
     ''')
+    
+    run_query(conn, '''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+        )
+    ''')
     conn.commit()
     
-    # Revisamos si la base de datos está vacía
+    # Revisamos si la base de datos de usuarios está vacía
+    cursor_us = run_query(conn, 'SELECT COUNT(*) as count FROM usuarios')
+    if cursor_us.fetchone()['count'] == 0:
+        run_query(conn, 'INSERT INTO usuarios (username, password) VALUES (?, ?)', ("eleodoro", "123456"))
+        conn.commit()
+    
+    # Revisamos si la base de datos de productos está vacía
     cursor = run_query(conn, 'SELECT COUNT(*) as count FROM productos')
     if cursor.fetchone()['count'] == 0:
         cargar_datos_mock(conn)
@@ -135,6 +149,43 @@ def home():
 @app.route('/imagen1.jpeg')
 def logo():
     return send_file('imagen1.jpeg')
+
+# -----------------
+# SEGURIDAD Y LOGIN
+# -----------------
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    
+    conn = get_db_connection()
+    usuario = run_query(conn, 'SELECT * FROM usuarios WHERE username = ? AND password = ?', (username, password)).fetchone()
+    conn.close()
+    
+    if usuario:
+        return jsonify({"status": "success", "message": "Autenticado correctamente"})
+    else:
+        return jsonify({"status": "error", "message": "Usuario o contraseña incorrectos"}), 401
+
+@app.route('/api/cambiar_password', methods=['POST'])
+def cambiar_password():
+    data = request.json
+    username = data.get('username')
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+    
+    conn = get_db_connection()
+    usuario = run_query(conn, 'SELECT * FROM usuarios WHERE username = ? AND password = ?', (username, old_password)).fetchone()
+    
+    if not usuario:
+        conn.close()
+        return jsonify({"status": "error", "message": "La contraseña actual es incorrecta"}), 400
+        
+    run_query(conn, 'UPDATE usuarios SET password = ? WHERE username = ?', (new_password, username))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Contraseña actualizada exitosamente"})
 
 @app.route('/api/productos', methods=['GET'])
 def get_productos():
