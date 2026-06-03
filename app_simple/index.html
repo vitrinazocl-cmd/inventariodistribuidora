@@ -64,7 +64,8 @@
         <div class="links">
             <button onclick="showPage('landing')">Inicio</button>
             <button onclick="showPage('dashboard')">Consola de Inventario</button>
-            <button onclick="showPage('pos')" style="background: var(--primary-color); color: #000; padding: 8px 15px; border-radius: 5px;">Punto de Venta</button>
+            <button onclick="showPage('pos')" style="background: var(--primary-color); color: #000; padding: 8px 15px; border-radius: 5px; margin-right: 15px;">Punto de Venta</button>
+            <button onclick="showPage('reportes')" style="background: transparent; color: #fff; padding: 8px 15px; border: 1px solid #fff; border-radius: 5px;">📊 Reportes de Ventas</button>
         </div>
     </nav>
 
@@ -179,15 +180,67 @@
         </div>
     </div>
 
+    <!-- Panel de Reportes (Gerencia) -->
+    <div id="reportes" class="dashboard" style="display: none;">
+        <div class="dashboard-header" style="display: flex; justify-content: space-between;">
+            <h2>Panel de Reportes Financieros</h2>
+            <button class="btn" style="background: #217346; color: #fff; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;" onclick="window.location.href='/api/descargar_excel'">📥 Descargar Excel</button>
+        </div>
+        
+        <!-- Tarjetas de Métricas -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px;">
+            <div style="background: rgba(0, 230, 118, 0.1); padding: 20px; border-radius: 8px; border-left: 4px solid var(--primary-color);">
+                <h4 style="color: var(--text-muted); margin-bottom: 5px;">Ventas de Hoy</h4>
+                <div id="rep-hoy" style="font-size: 2rem; font-weight: bold; color: #fff;">$0</div>
+            </div>
+            <div style="background: rgba(52, 152, 219, 0.1); padding: 20px; border-radius: 8px; border-left: 4px solid #3498db;">
+                <h4 style="color: var(--text-muted); margin-bottom: 5px;">Esta Semana</h4>
+                <div id="rep-semana" style="font-size: 2rem; font-weight: bold; color: #fff;">$0</div>
+            </div>
+            <div style="background: rgba(243, 156, 18, 0.1); padding: 20px; border-radius: 8px; border-left: 4px solid #f39c12;">
+                <h4 style="color: var(--text-muted); margin-bottom: 5px;">Este Mes</h4>
+                <div id="rep-mes" style="font-size: 2rem; font-weight: bold; color: #fff;">$0</div>
+            </div>
+            <div style="background: rgba(155, 89, 182, 0.1); padding: 20px; border-radius: 8px; border-left: 4px solid #9b59b6;">
+                <h4 style="color: var(--text-muted); margin-bottom: 5px;">Este Año</h4>
+                <div id="rep-ano" style="font-size: 2rem; font-weight: bold; color: #fff;">$0</div>
+            </div>
+        </div>
+
+        <!-- Tabla de Historial -->
+        <div style="background: var(--surface-color); padding: 20px; border-radius: 8px;">
+            <h3>Últimas 50 Transacciones</h3>
+            <div style="max-height: 400px; overflow-y: auto; margin-top: 15px;">
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Fecha y Hora</th>
+                            <th>Producto</th>
+                            <th>Cant.</th>
+                            <th>IVA</th>
+                            <th>Total Pagado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-historial">
+                        <!-- Llenado por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Navegación Básica
         function showPage(pageId) {
             document.getElementById('landing').style.display = pageId === 'landing' ? 'flex' : 'none';
             document.getElementById('dashboard').style.display = pageId === 'dashboard' ? 'block' : 'none';
             document.getElementById('pos').style.display = pageId === 'pos' ? 'block' : 'none';
+            document.getElementById('reportes').style.display = pageId === 'reportes' ? 'block' : 'none';
             
             if(pageId === 'dashboard') cargarProductos();
             if(pageId === 'pos') cargarPOS();
+            if(pageId === 'reportes') cargarReportes();
         }
 
         function mostrarFormulario(show) {
@@ -480,6 +533,38 @@
                 }
             } catch (err) {
                 console.error("Fallo de red en venta masiva", err);
+            }
+        }
+
+        // ==========================================
+        // LÓGICA DE REPORTES FINANCIEROS
+        // ==========================================
+        async function cargarReportes() {
+            try {
+                const res = await fetch('/api/reportes');
+                const data = await res.json();
+                
+                document.getElementById('rep-hoy').innerText = "$" + data.hoy.toLocaleString('es-CL');
+                document.getElementById('rep-semana').innerText = "$" + data.semana.toLocaleString('es-CL');
+                document.getElementById('rep-mes').innerText = "$" + data.mes.toLocaleString('es-CL');
+                document.getElementById('rep-ano').innerText = "$" + data.ano.toLocaleString('es-CL');
+                
+                const tbody = document.getElementById('tabla-historial');
+                tbody.innerHTML = '';
+                data.ultimas.forEach(v => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="color: var(--text-muted)">#${v.id}</td>
+                        <td>${v.fecha}</td>
+                        <td style="font-weight: 500">${v.nombre_producto}</td>
+                        <td style="text-align: center; background: rgba(255,255,255,0.05);">${v.cantidad}</td>
+                        <td style="color: var(--text-muted)">$${v.iva.toLocaleString('es-CL')}</td>
+                        <td style="color: var(--primary-color); font-weight: bold;">$${v.total_final.toLocaleString('es-CL')}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch(e) {
+                console.error("Error cargando reportes", e);
             }
         }
     </script>

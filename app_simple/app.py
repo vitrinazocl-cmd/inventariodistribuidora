@@ -3,6 +3,8 @@ import sqlite3
 import random
 import string
 import os
+import csv
+import io
 
 app = Flask(__name__)
 DB_FILE = 'inventario.db'
@@ -28,6 +30,20 @@ def init_db():
             pasillo TEXT,
             posicion INTEGER,
             en_promocion INTEGER DEFAULT 0
+        )
+    ''')
+    
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS historial_ventas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha DATETIME DEFAULT (datetime('now', 'localtime')),
+            producto_id INTEGER,
+            nombre_producto TEXT,
+            cantidad INTEGER,
+            subtotal INTEGER,
+            descuento INTEGER,
+            iva INTEGER,
+            total_final INTEGER
         )
     ''')
     conn.commit()
@@ -124,6 +140,15 @@ def vender():
             
         nuevo_stock = producto['stock'] - cantidad
         conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
+        
+        # Registrar en el historial de ventas
+        neto = int(total / 1.19)
+        iva = total - neto
+        conn.execute('''
+            INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
+            VALUES (datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?)
+        ''', (idp, producto['nombre'], cantidad, neto, descuento, iva, total))
+        
         conn.commit()
         conn.close()
         
@@ -203,6 +228,19 @@ def venta_masiva():
             nuevo_stock = producto['stock'] - cantidad
             conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
             
+            # Registrar al historial
+            total_item = producto['precio'] * cantidad
+            descto_item = int(total_item * 0.03) if (producto['en_promocion'] == 1 and cantidad > 10) else 0
+            total_pagar = total_item - descto_item
+            
+            neto_item = int(total_pagar / 1.19)
+            iva_item = total_pagar - neto_item
+            
+            conn.execute('''
+                INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
+                VALUES (datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?)
+            ''', (idp, producto['nombre'], cantidad, neto_item, descto_item, iva_item, total_pagar))
+            
         # Si todos los productos tenían stock, guardamos los cambios definitivamente
         conn.commit()
     except Exception as e:
@@ -213,6 +251,47 @@ def venta_masiva():
         
     conn.close()
     return jsonify({"status": "success", "message": "Venta procesada con éxito y stock descontado."})
+
+# 7. Reportes Financieros
+@app.route('/api/reportes', methods=['GET'])
+def obtener_reportes():
+    conn = get_db_connection()
+    hoy = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE date(fecha) = date('now', 'localtime')").fetchone()[0]
+    semana = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE strftime('%W', fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()[0]
+    mes = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE strftime('%m', fecha) = strftime('%m', 'now', 'localtime') AND strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()[0]
+    ano = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()[0]
+    ultimas = conn.execute("SELECT * FROM historial_ventas ORDER BY id DESC LIMIT 50").fetchall()
+    conn.close()
+    
+    return jsonify({
+        "hoy": hoy,
+        "semana": semana,
+        "mes": mes,
+        "ano": ano,
+        "ultimas": [dict(ix) for ix in ultimas]
+    })
+
+# 8. Exportar a Excel (CSV universal)
+from flask import Response
+
+@app.route('/api/descargar_excel', methods=['GET'])
+def descargar_excel():
+    conn = get_db_connection()
+    ventas = conn.execute("SELECT * FROM historial_ventas ORDER BY id DESC").fetchall()
+    conn.close()
+    
+    salida = io.StringIO()
+    writer = csv.writer(salida, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(['ID Venta', 'Fecha y Hora', 'ID Producto', 'Nombre Producto', 'Unidades Vendidas', 'Subtotal Neto ($)', 'Descuento ($)', 'IVA 19% ($)', 'Total Cobrado ($)'])
+    
+    for v in ventas:
+        writer.writerow([v['id'], v['fecha'], v['producto_id'], v['nombre_producto'], v['cantidad'], v['subtotal'], v['descuento'], v['iva'], v['total_final']])
+    
+    return Response(
+        salida.getvalue().encode('utf-8-sig'), 
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=Reporte_Distribuidora.csv"}
+    )
 
 # ======================
 # MAIN
