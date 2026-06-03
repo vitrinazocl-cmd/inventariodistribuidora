@@ -1,5 +1,4 @@
-from flask import Flask, jsonify, request, send_file
-import sqlite3
+from flask import Flask, jsonify, request, send_file, Response
 import random
 import string
 import os
@@ -7,19 +6,54 @@ import csv
 import io
 
 app = Flask(__name__)
-DB_FILE = 'inventario.db'
 
 # ======================
-# CONFIGURACION DB Y DATOS INICIALES
+# CONFIGURACION DB Y ENRUTADOR
 # ======================
+DATABASE_URL = os.environ.get('DATABASE_URL')
+USE_POSTGRES = DATABASE_URL is not None
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+else:
+    import sqlite3
+
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    else:
+        conn = sqlite3.connect('inventario.db')
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def run_query(conn, query, params=()):
+    """
+    Enrutador inteligente que traduce las consultas de SQLite a PostgreSQL al vuelo.
+    """
+    if USE_POSTGRES:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Traducciones de SQLite a PostgreSQL
+        q = query.replace('?', '%s')
+        q = q.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
+        q = q.replace("DATETIME DEFAULT (datetime('now', 'localtime'))", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        q = q.replace('IFNULL', 'COALESCE')
+        q = q.replace("date('now', 'localtime')", "CURRENT_DATE")
+        q = q.replace("strftime('%W', fecha) = strftime('%W', 'now', 'localtime')", "EXTRACT(WEEK FROM fecha) = EXTRACT(WEEK FROM CURRENT_DATE)")
+        q = q.replace("strftime('%m', fecha) = strftime('%m', 'now', 'localtime')", "EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM CURRENT_DATE)")
+        q = q.replace("strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')", "EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)")
+        
+        cur.execute(q, params)
+        return cur
+    else:
+        cur = conn.cursor()
+        cur.execute(query, params)
+        return cur
 
 def init_db():
     conn = get_db_connection()
-    conn.execute('''
+    run_query(conn, '''
         CREATE TABLE IF NOT EXISTS productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sku TEXT,
@@ -33,7 +67,7 @@ def init_db():
         )
     ''')
     
-    conn.execute('''
+    run_query(conn, '''
         CREATE TABLE IF NOT EXISTS historial_ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fecha DATETIME DEFAULT (datetime('now', 'localtime')),
@@ -48,19 +82,18 @@ def init_db():
     ''')
     conn.commit()
     
-    # Revisamos si la base de datos está vacía para meter datos de prueba iniciales
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) FROM productos')
-    if cursor.fetchone()[0] == 0:
+    # Revisamos si la base de datos está vacía
+    cursor = run_query(conn, 'SELECT COUNT(*) as count FROM productos')
+    if cursor.fetchone()['count'] == 0:
         cargar_datos_mock(conn)
     
     conn.close()
 
 def cargar_datos_mock(conn):
-    licores = ["Pisco Alto del Carmen", "Pisco Mistral", "Pisco Capel", "Whisky Johnnie Walker Red", "Whisky Johnnie Walker Black", "Whisky Chivas Regal", "Ron Bacardi Añejo", "Ron Havana Club", "Ron Flor de Caña", "Vodka Absolut", "Vodka Smirnoff", "Tequila Jose Cuervo", "Gin Tanqueray", "Gin Beefeater", "Baileys", "Jägermeister", "Fernet Branca"]
-    vinos = ["Vino Casillero del Diablo Cabernet", "Vino Gato Negro Merlot", "Vino Concha y Toro Sauvignon Blanc", "Vino Santa Helena Cármenère", "Vino Misiones de Rengo", "Vino Tarapacá Gran Reserva", "Vino 120 Santa Rita"]
-    cervezas = ["Cerveza Cristal", "Cerveza Escudo", "Cerveza Royal Guard", "Cerveza Corona", "Cerveza Heineken", "Cerveza Stella Artois", "Cerveza Becker", "Cerveza Kunstmann Torobayo", "Cerveza Austral Calafate"]
-    bebidas = ["Coca-Cola", "Coca-Cola Zero", "Pepsi", "Fanta", "Sprite", "Kem Piña", "Bilz", "Pap", "Crush", "Canada Dry Ginger Ale", "Agua Mineral Cachantun", "Agua Benedictino", "Red Bull", "Monster Energy", "Jugo Watts Durazno", "Jugo Andina Naranja", "Gatorade Blue"]
+    licores = ["Pisco Alto del Carmen", "Pisco Mistral", "Pisco Capel", "Whisky Johnnie Walker", "Vodka Absolut", "Ron Bacardi"]
+    vinos = ["Vino Casillero del Diablo", "Vino Gato Negro", "Vino Misiones de Rengo"]
+    cervezas = ["Cerveza Cristal", "Cerveza Escudo", "Cerveza Corona", "Cerveza Heineken"]
+    bebidas = ["Coca-Cola", "Pepsi", "Fanta", "Sprite", "Kem Piña", "Bilz", "Pap", "Red Bull"]
 
     todas_las_bebidas = licores + vinos + cervezas + bebidas
     tipos_venta = ["Unidad", "Pack", "Caja", "Jaba"]
@@ -83,11 +116,9 @@ def cargar_datos_mock(conn):
 
         tamano = random.choice(["350cc", "500cc", "1L", "1.5L", "2L", "3L", "750ml"])
         nombre_final = f"{nombre_base} {tamano}"
-        
-        # Dejaremos exactamente 20 productos con promoción de ejemplo
         en_promocion = 1 if i <= 20 else 0
         
-        conn.execute('''
+        run_query(conn, '''
             INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion, en_promocion)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (generar_sku(i), nombre_final, tipo, precio, random.randint(0, 1000), random.choice(string.ascii_uppercase), random.randint(1, 100), en_promocion))
@@ -97,94 +128,39 @@ def cargar_datos_mock(conn):
 # RUTAS DE FLASK (API y Web)
 # ======================
 
-# 1. Mostrar la página web
 @app.route('/')
 def home():
     return send_file('index.html')
 
-# 1.5. Mostrar el logo
 @app.route('/imagen1.jpeg')
 def logo():
     return send_file('imagen1.jpeg')
 
-# ======================
-# API ENDPOINTS
-# ======================
-
-# 1. Obtener todos los productos
 @app.route('/api/productos', methods=['GET'])
 def get_productos():
     conn = get_db_connection()
     
-    # Asegurar que existan los productos base para la jaba mixta
     necesarios = ["Coca-Cola 1.25L", "Fanta 1.25L", "Sprite 1.25L"]
     for nombre in necesarios:
-        existe = conn.execute('SELECT 1 FROM productos WHERE nombre = ?', (nombre,)).fetchone()
+        existe = run_query(conn, 'SELECT 1 FROM productos WHERE nombre = ?', (nombre,)).fetchone()
         if not existe:
-            conn.execute('''
+            run_query(conn, '''
                 INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion, en_promocion)
                 VALUES (?, ?, 'Unidad', 1200, 500, 'A', 1, 0)
             ''', (f"BEB-125-{random.randint(10,99)}", nombre))
             conn.commit()
             
-    productos = conn.execute('SELECT * FROM productos').fetchall()
+    productos = run_query(conn, 'SELECT * FROM productos').fetchall()
     conn.close()
     return jsonify([dict(ix) for ix in productos])
 
-# 3. Registrar venta y bajar stock
-@app.route('/api/vender', methods=['POST'])
-def vender():
-    data = request.json
-    idp = data.get('id')
-    cantidad = data.get('cantidad')
-    
-    conn = get_db_connection()
-    producto = conn.execute('SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
-    
-    if producto is None:
-        conn.close()
-        return jsonify({"status": "error", "message": "Producto no encontrado"}), 404
-        
-    if producto['stock'] >= cantidad:
-        total = producto['precio'] * cantidad
-        descuento = 0
-        
-        # Calcular descuento del 3% si tiene promo y son más de 10 unidades
-        if producto['en_promocion'] == 1 and cantidad > 10:
-            descuento = int(total * 0.03)
-            total -= descuento
-            
-        nuevo_stock = producto['stock'] - cantidad
-        conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
-        
-        # Registrar en el historial de ventas
-        neto = int(total / 1.19)
-        iva = total - neto
-        conn.execute('''
-            INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
-            VALUES (datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?)
-        ''', (idp, producto['nombre'], cantidad, neto, descuento, iva, total))
-        
-        conn.commit()
-        conn.close()
-        
-        mensaje = f"Venta exitosa. Total a cobrar: ${total}"
-        if descuento > 0:
-            mensaje += f" (Incluye un descuento del 3%: ahorró ${descuento})"
-            
-        return jsonify({"status": "success", "message": mensaje, "stock_actual": nuevo_stock})
-    else:
-        conn.close()
-        return jsonify({"status": "error", "message": "Stock insuficiente"}), 400
-
-# 4. Agregar un Producto Nuevo
 @app.route('/api/productos', methods=['POST'])
 def agregar_producto():
     data = request.json
     sku = f"BEB-{random.randint(10000, 99999)}"
     
     conn = get_db_connection()
-    conn.execute('''
+    run_query(conn, '''
         INSERT INTO productos (sku, nombre, tipo_venta, precio, stock, pasillo, posicion, en_promocion)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
@@ -201,22 +177,20 @@ def agregar_producto():
     conn.close()
     return jsonify({"status": "success", "message": "Producto agregado exitosamente"}), 201
 
-# 5. Eliminar un Producto
 @app.route('/api/productos/<int:id>', methods=['DELETE'])
 def eliminar_producto(id):
     conn = get_db_connection()
-    producto = conn.execute('SELECT * FROM productos WHERE id = ?', (id,)).fetchone()
+    producto = run_query(conn, 'SELECT * FROM productos WHERE id = ?', (id,)).fetchone()
     
     if producto is None:
         conn.close()
         return jsonify({"status": "error", "message": "Producto no encontrado"}), 404
         
-    conn.execute('DELETE FROM productos WHERE id = ?', (id,))
+    run_query(conn, 'DELETE FROM productos WHERE id = ?', (id,))
     conn.commit()
     conn.close()
     return jsonify({"status": "success", "message": "Producto eliminado exitosamente"})
 
-# 6. Venta Masiva (Caja Registradora / POS)
 @app.route('/api/venta_masiva', methods=['POST'])
 def venta_masiva():
     data = request.json
@@ -228,50 +202,45 @@ def venta_masiva():
     conn = get_db_connection()
     
     try:
-        # Iniciamos el chequeo y descuento del carrito
         for item in items:
             if item.get('is_jaba_mixta'):
-                # PROCESAR JABA MIXTA (Combo Dinámico)
                 for sub in item['sub_items']:
                     idp = sub['id']
-                    sub_qty = sub['qty'] * item['cantidad'] # Si compran 2 jabas, multiplicar
+                    sub_qty = sub['qty'] * item['cantidad']
                     
                     if sub_qty > 0:
-                        producto = conn.execute('SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
+                        producto = run_query(conn, 'SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
                         if producto is None:
-                            raise Exception(f"Producto componente de Jaba no encontrado")
+                            raise Exception("Producto componente de Jaba no encontrado")
                         if producto['stock'] < sub_qty:
                             raise Exception(f"Falta stock de {producto['nombre']} para armar la Jaba Mixta")
                             
                         nuevo_stock = producto['stock'] - sub_qty
-                        conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
+                        run_query(conn, 'UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
                 
-                # Registrar la jaba como un todo en el historial (No los productos sueltos)
                 total_pagar = item['precio'] * item['cantidad']
                 neto_item = int(total_pagar / 1.19)
                 iva_item = total_pagar - neto_item
-                conn.execute('''
+                run_query(conn, '''
                     INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
                     VALUES (datetime('now', 'localtime'), 0, ?, ?, ?, 0, ?, ?)
                 ''', (item['nombre'], item['cantidad'], neto_item, iva_item, total_pagar))
                 
             else:
-                # PROCESAR PRODUCTO NORMAL
                 idp = item['id']
                 cantidad = item['cantidad']
                 
-                producto = conn.execute('SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
+                producto = run_query(conn, 'SELECT * FROM productos WHERE id = ?', (idp,)).fetchone()
                 
                 if producto is None:
                     raise Exception(f"Producto ID {idp} no encontrado en la base de datos.")
                     
                 if producto['stock'] < cantidad:
-                    raise Exception(f"Stock insuficiente para el producto: {producto['nombre']}. Stock actual: {producto['stock']}")
+                    raise Exception(f"Stock insuficiente para {producto['nombre']}.")
                     
                 nuevo_stock = producto['stock'] - cantidad
-                conn.execute('UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
+                run_query(conn, 'UPDATE productos SET stock = ? WHERE id = ?', (nuevo_stock, idp))
                 
-                # Registrar al historial
                 total_item = producto['precio'] * cantidad
                 descto_item = int(total_item * 0.03) if (producto['en_promocion'] == 1 and cantidad > 10) else 0
                 total_pagar = total_item - descto_item
@@ -279,15 +248,13 @@ def venta_masiva():
                 neto_item = int(total_pagar / 1.19)
                 iva_item = total_pagar - neto_item
                 
-                conn.execute('''
+                run_query(conn, '''
                     INSERT INTO historial_ventas (fecha, producto_id, nombre_producto, cantidad, subtotal, descuento, iva, total_final)
                     VALUES (datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?)
                 ''', (idp, producto['nombre'], cantidad, neto_item, descto_item, iva_item, total_pagar))
             
-        # Si todo está OK, guardamos los cambios definitivamente
         conn.commit()
     except Exception as e:
-        # Si hubo un error (ej. falta de stock de algún producto), deshacemos todo
         conn.rollback()
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -295,15 +262,14 @@ def venta_masiva():
     conn.close()
     return jsonify({"status": "success", "message": "Venta procesada con éxito y stock descontado."})
 
-# 7. Reportes Financieros
 @app.route('/api/reportes', methods=['GET'])
 def obtener_reportes():
     conn = get_db_connection()
-    hoy = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE date(fecha) = date('now', 'localtime')").fetchone()[0]
-    semana = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE strftime('%W', fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()[0]
-    mes = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE strftime('%m', fecha) = strftime('%m', 'now', 'localtime') AND strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()[0]
-    ano = conn.execute("SELECT IFNULL(SUM(total_final), 0) FROM historial_ventas WHERE strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()[0]
-    ultimas = conn.execute("SELECT * FROM historial_ventas ORDER BY id DESC LIMIT 50").fetchall()
+    hoy = run_query(conn, "SELECT IFNULL(SUM(total_final), 0) as t FROM historial_ventas WHERE date(fecha) = date('now', 'localtime')").fetchone()['t']
+    semana = run_query(conn, "SELECT IFNULL(SUM(total_final), 0) as t FROM historial_ventas WHERE strftime('%W', fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()['t']
+    mes = run_query(conn, "SELECT IFNULL(SUM(total_final), 0) as t FROM historial_ventas WHERE strftime('%m', fecha) = strftime('%m', 'now', 'localtime') AND strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()['t']
+    ano = run_query(conn, "SELECT IFNULL(SUM(total_final), 0) as t FROM historial_ventas WHERE strftime('%Y', fecha) = strftime('%Y', 'now', 'localtime')").fetchone()['t']
+    ultimas = run_query(conn, "SELECT * FROM historial_ventas ORDER BY id DESC LIMIT 50").fetchall()
     conn.close()
     
     return jsonify({
@@ -314,13 +280,10 @@ def obtener_reportes():
         "ultimas": [dict(ix) for ix in ultimas]
     })
 
-# 8. Exportar a Excel (CSV universal)
-from flask import Response
-
 @app.route('/api/descargar_excel', methods=['GET'])
 def descargar_excel():
     conn = get_db_connection()
-    ventas = conn.execute("SELECT * FROM historial_ventas ORDER BY id DESC").fetchall()
+    ventas = run_query(conn, "SELECT * FROM historial_ventas ORDER BY id DESC").fetchall()
     conn.close()
     
     salida = io.StringIO()
@@ -336,12 +299,8 @@ def descargar_excel():
         headers={"Content-disposition": "attachment; filename=Reporte_Distribuidora.csv"}
     )
 
-# ======================
-# MAIN
-# ======================
-# Iniciar DB antes de arrancar el servidor (importante para servidores como Render/Gunicorn)
 init_db()
 
 if __name__ == '__main__':
-    print("Base de datos SQLite conectada. Iniciando servidor en http://127.0.0.1:5000")
+    print("Servidor iniciando en http://127.0.0.1:5000")
     app.run(debug=True, port=5000)
